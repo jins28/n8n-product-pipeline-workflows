@@ -1,0 +1,775 @@
+{
+  "name": "01 – Check for new products",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-new-products",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "33555993-e54f-4811-b79a-6fa29b0768ca",
+      "name": "Button: Check for new products",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        384,
+        -1120
+      ],
+      "webhookId": "be918787-cb34-4cdf-b396-36dfcf69877c"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "64a7858e-763f-48bb-8b72-90177ef082d2",
+      "name": "Every day at 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        432,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:8002/scrape",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "={{ $json.body?.limit || 5 }}"
+            },
+            {
+              "name": "collection",
+              "value": "={{ $json.body?.collection || 'all' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "44d0797e-ea76-495b-a501-e13d697d6343",
+      "name": "Scrape products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        -624
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows",
+          "mode": "list",
+          "cachedResultName": "Product Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Products",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "56763542-cb18-4a87-85be-c07f70b4edb8",
+      "name": "Read existing rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        912,
+        -624
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "djc3Jt3e4ZuZtj6e",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compare the scraped products with the rows already in the sheet.\n// The product URL is the unique key: a product whose URL is already in the\n// sheet is skipped, so running the workflow twice never creates duplicates.\n\nconst scraped = $('Scrape products').first().json;\nconst existingUrls = new Set(\n  $('Read existing rows').all()\n    .map(item => String(item.json.url || '').trim())\n    .filter(url => url !== '')\n);\n\nconst now = new Date().toISOString();\nconst newRows = [];\n\nfor (const p of scraped.products || []) {\n  if (existingUrls.has(p.url)) continue;   // already in the sheet -> skip\n  newRows.push({\n    json: {\n      id: p.id,\n      title: p.title,\n      product_type: p.product_type,\n      price: p.price,\n      url: p.url,\n      image_urls: (p.images || []).map(img => img.src).join('\\n'),\n      description_en: p.description_en,\n      dimensions_en: p.dimensions,\n      material_construction_en: p.material_construction,\n      features_feel_en: p.features_feel,\n      description_de: '',\n      dimensions_de: '',\n      material_construction_de: '',\n      features_feel_de: '',\n      status: 'Neu',\n      approval: '',\n      error: '',\n      created_at: now,\n      updated_at: now,\n    },\n  });\n}\n\n// Returning an empty list stops the workflow here: nothing new to do.\nreturn newRows;"
+      },
+      "id": "51fc00d9-652f-4ba1-8265-4e56c4a7ace9",
+      "name": "Keep only new products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows",
+          "mode": "list",
+          "cachedResultName": "Product Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Products",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_type",
+              "displayName": "product_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "image_urls",
+              "displayName": "image_urls",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_en",
+              "displayName": "description_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_en",
+              "displayName": "dimensions_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_en",
+              "displayName": "material_construction_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_en",
+              "displayName": "features_feel_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_de",
+              "displayName": "description_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_de",
+              "displayName": "dimensions_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_de",
+              "displayName": "material_construction_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_de",
+              "displayName": "features_feel_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approval",
+              "displayName": "approval",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "32260c8c-a9fa-42c9-8b1d-0593a285eb92",
+      "name": "Add new rows (status Neu)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1392,
+        -624
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "djc3Jt3e4ZuZtj6e",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You translate product texts for a German online furniture shop. Translate from English into natural, customer-friendly German. Keep all numbers, measurements and units exactly as given; only translate words (for example W/D/H becomes B/T/H). Keep line breaks. Do not add or invent information. Answer only with a JSON object with the keys description_de, dimensions_de, material_construction_de and features_feel_de. If an input text is empty, return an empty string for it.'\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        description: $('Keep only new products').item.json.description_en,\n        dimensions: $('Keep only new products').item.json.dimensions_en,\n        material_construction: $('Keep only new products').item.json.material_construction_en,\n        features_feel: $('Keep only new products').item.json.features_feel_en\n      })\n    }\n  ]\n}) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "8edaff63-70d6-467e-9c23-7dea028e93bf",
+      "name": "Translate with OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1632,
+        -624
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "b0may8WsgVgEAfvI",
+          "name": "OpenAI account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Read the JSON answer from OpenAI and build the sheet update for this product.\nconst row = $('Keep only new products').item.json;\nconst now = new Date().toISOString();\n\ntry {\n  const t = JSON.parse($json.choices[0].message.content);\n  return {\n    json: {\n      id: row.id,                      // used to find the right row in the sheet\n      description_de: t.description_de || '',\n      dimensions_de: t.dimensions_de || '',\n      material_construction_de: t.material_construction_de || '',\n      features_feel_de: t.features_feel_de || '',\n      status: 'Wartet auf Freigabe',\n      error: '',\n      updated_at: now,\n    },\n  };\n} catch (e) {\n  // OpenAI answered, but not with the JSON we expected\n  return {\n    json: { id: row.id, status: 'Fehler', error: 'Translation could not be read: ' + e.message, updated_at: now },\n  };\n}"
+      },
+      "id": "2d25c01a-1d9b-4e35-beda-7817097d043d",
+      "name": "Prepare translated row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        -704
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// The OpenAI request failed (no credit, wrong key, timeout, ...).\n// Mark the product as \"Fehler\" and keep the reason in the error column.\nconst row = $('Keep only new products').item.json;\nconst err = $json.error;\nconst message = typeof err === 'string' ? err : (err && err.message) || JSON.stringify($json);\n\nreturn {\n  json: {\n    id: row.id,\n    status: 'Fehler',\n    error: ('Translation failed: ' + message).slice(0, 500),\n    updated_at: new Date().toISOString(),\n  },\n};"
+      },
+      "id": "9fc3daeb-3abc-46a0-a7be-4244dc89fca5",
+      "name": "Prepare error row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        -512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows",
+          "mode": "list",
+          "cachedResultName": "Product Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Products",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_type",
+              "displayName": "product_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "image_urls",
+              "displayName": "image_urls",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_en",
+              "displayName": "description_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_en",
+              "displayName": "dimensions_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_en",
+              "displayName": "material_construction_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_en",
+              "displayName": "features_feel_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_de",
+              "displayName": "description_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_de",
+              "displayName": "dimensions_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_de",
+              "displayName": "material_construction_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_de",
+              "displayName": "features_feel_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approval",
+              "displayName": "approval",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "6f50d0bc-fcde-40c8-ae0f-08a352e292ac",
+      "name": "Update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2160,
+        -624
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "djc3Jt3e4ZuZtj6e",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        304,
+        -608
+      ],
+      "id": "f39409b5-5779-4117-a40f-5d1f3ebb1630",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Button: Check for new products": {
+      "main": [
+        [
+          {
+            "node": "Scrape products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every day at 07:00": {
+      "main": [
+        [
+          {
+            "node": "Scrape products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape products": {
+      "main": [
+        [
+          {
+            "node": "Read existing rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read existing rows": {
+      "main": [
+        [
+          {
+            "node": "Keep only new products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep only new products": {
+      "main": [
+        [
+          {
+            "node": "Add new rows (status Neu)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add new rows (status Neu)": {
+      "main": [
+        [
+          {
+            "node": "Translate with OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate with OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Prepare translated row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare error row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare translated row": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare error row": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Scrape products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c88c827d-f5b3-4fe5-a736-fd2932d0cbd0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "15739a5c68011a040bed918b8e1b4c81ab620b907d068aeadd18922b685b6671"
+  },
+  "nodeGroups": [],
+  "id": "RupTwm2x8AzkNkox",
+  "tags": []
+}

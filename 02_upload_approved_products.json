@@ -1,0 +1,498 @@
+{
+  "name": "02 – Upload approved products",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-approved",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "fabb79b7-3b09-45d8-97ec-4b70c3f40708",
+      "name": "Button: Upload approved products",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        80,
+        112
+      ],
+      "webhookId": "55a6ba58-a8b9-48d4-a243-ce2ed1cde245"
+    },
+    {
+      "parameters": {},
+      "id": "c35d439d-90a2-4a62-9bea-3f7ea75ffe08",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        80,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows",
+          "mode": "list",
+          "cachedResultName": "Product Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Products",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "22c6a3f2-b650-4d53-a046-c3da80fdc820",
+      "name": "Read all rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        336,
+        208
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "djc3Jt3e4ZuZtj6e",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Find rows a person approved that are not uploaded yet.\n// - approval = \"Approved\"\n// - status = \"Wartet auf Freigabe\", or \"Fehler\" from an earlier failed upload (retry)\n// For each row we build the request body for the shop API (Shopify-like format).\n\nconst toLines = (text) => String(text || '').split('\\n').map(s => s.trim()).filter(Boolean);\nconst toHtml = (text) => toLines(text).map(line => `<p>${line}</p>`).join('');\n\nconst out = [];\nfor (const item of $input.all()) {\n  const r = item.json;\n  const approved = String(r.approval || '').trim().toLowerCase() === 'approved';\n  const retry = r.status === 'Fehler' && String(r.error || '').startsWith('Upload failed');\n  if (!approved || !(r.status === 'Wartet auf Freigabe' || retry)) continue;\n\n  out.push({\n    json: {\n      id: r.id,\n      payload: {\n        product: {\n          title: r.title,\n          body_html: toHtml(r.description_de || r.description_en),\n          product_type: r.product_type || 'Produkt',\n          vendor: 'Nordholm Furniture Co.',\n          source_url: r.url,\n          images: toLines(r.image_urls).map(src => ({ src, alt: r.title })),\n          dimensions: r.dimensions_de || r.dimensions_en || '',\n          material_construction: r.material_construction_de || r.material_construction_en || '',\n          features_feel: r.features_feel_de || r.features_feel_en || '',\n          variants: [{ sku: String(r.id), price: Number(String(r.price).replace(',', '.')).toFixed(2) }],\n        },\n      },\n    },\n  });\n}\nreturn out;   // empty list = nothing to upload, the branch stops here"
+      },
+      "id": "1b052ce9-5360-4a63-bb42-9e9d1f76589c",
+      "name": "Pick approved products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rows a person marked \"Not approved\" that are still waiting -> status \"Abgelehnt\".\nconst now = new Date().toISOString();\nreturn $input.all()\n  .filter(i => String(i.json.approval || '').trim().toLowerCase() === 'not approved'\n            && i.json.status === 'Wartet auf Freigabe')\n  .map(i => ({ json: { id: i.json.id, status: 'Abgelehnt', updated_at: now } }));"
+      },
+      "id": "19e67b37-b256-4969-8152-8978fa521a6f",
+      "name": "Pick rejected products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8001/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "7696a964-5ef1-4751-8d89-00f1ee9b381c",
+      "name": "Upload to shop",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        864,
+        112
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3Wjnnz2ZQNX4XODC",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// The shop accepted the product (201 created / 200 updated).\nreturn {\n  json: {\n    id: $('Pick approved products').item.json.id,\n    status: 'Hochgeladen',\n    error: '',\n    updated_at: new Date().toISOString(),\n  },\n};"
+      },
+      "id": "087d1496-7a13-42a5-9631-184d8fd5762f",
+      "name": "Mark as uploaded",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// The upload failed (shop not running, wrong key, invalid data ...).\n// Status \"Fehler\" + reason; the next run will try this product again.\nconst err = $json.error;\nconst message = typeof err === 'string' ? err : (err && err.message) || JSON.stringify($json);\nreturn {\n  json: {\n    id: $('Pick approved products').item.json.id,\n    status: 'Fehler',\n    error: ('Upload failed: ' + message).slice(0, 500),\n    updated_at: new Date().toISOString(),\n  },\n};"
+      },
+      "id": "837d4e3a-697f-4dd2-af49-02157e832479",
+      "name": "Mark upload error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows",
+          "mode": "list",
+          "cachedResultName": "Product Pipeline",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Products",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lFxzbmvkFp2J30cjx8XX_FA-GpiHXO3v0n2zpdPFows/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_type",
+              "displayName": "product_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "image_urls",
+              "displayName": "image_urls",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_en",
+              "displayName": "description_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_en",
+              "displayName": "dimensions_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_en",
+              "displayName": "material_construction_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_en",
+              "displayName": "features_feel_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_de",
+              "displayName": "description_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensions_de",
+              "displayName": "dimensions_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material_construction_de",
+              "displayName": "material_construction_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "features_feel_de",
+              "displayName": "features_feel_de",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approval",
+              "displayName": "approval",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "94ab9fb8-9f3a-4d52-99d3-19424e351091",
+      "name": "Update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1376,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "djc3Jt3e4ZuZtj6e",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Button: Upload approved products": {
+      "main": [
+        [
+          {
+            "node": "Read all rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Read all rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read all rows": {
+      "main": [
+        [
+          {
+            "node": "Pick approved products",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pick rejected products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick approved products": {
+      "main": [
+        [
+          {
+            "node": "Upload to shop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick rejected products": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to shop": {
+      "main": [
+        [
+          {
+            "node": "Mark as uploaded",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark upload error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as uploaded": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark upload error": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e7eb50fe-41eb-4957-975c-fd33a3a8a751",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "15739a5c68011a040bed918b8e1b4c81ab620b907d068aeadd18922b685b6671"
+  },
+  "nodeGroups": [],
+  "id": "2DVcTcFYBPxznhzF",
+  "tags": []
+}
